@@ -1,0 +1,225 @@
+---
+title: "Article Sentiment Analysis 2017-2018"
+output:
+  html_document:
+    number_sections: TRUE
+    toc: TRUE
+    fig_height: 4
+    fig_width: 7
+    code_folding: hide
+---
+
+In this kernel, I will analyse the NYT articles data for Jan-May 2017 and Jan-Apr18 that Aashita Kesarwani has kindly provided https://www.kaggle.com/aashita/nyt-comments/data.
+
+My first kernal had some EDA on March 2018 articles and also looked into the imapct of having Trump in the headline, specifically, was there a change in the number of comments an article received with him in the headline. It can be found here: https://www.kaggle.com/jaseziv83/march-2018-nyt-headline-click-bait
+
+Here, I have analysed all the data provided to see if anything has changed over time.
+
+# Load Libraries
+
+```{r, message=FALSE, warning=FALSE}
+# load libraries
+library(dplyr)
+library(tidytext)
+library(tidyr)
+library(ggplot2)
+library(lubridate)
+```
+
+
+# Read in Data
+
+The data is read in for each month. In my own script, I have a far easier loop coded in to read in all files from my local and append as it goes, however I didn't know how to reproduce that in a kernel so have done this file-by-file. 
+
+Would love to get some pointers of some of you in the comments as to how to simplify this here on Kaggle!
+
+I've also used `bind_rows()` as some months have a variable names *abstract* in them, where others don't. `rbind()` doesn't play nice with uneven columns, so that's why the alternative was chosen.
+```{r, message=FALSE, warning=FALSE}
+jan17 <- read.csv('/Users/jasonzivkovic/Documents/NewYorkTimesTextAnalysis/NYT Articles Data/ArticlesJan2017.csv', stringsAsFactors = F)
+feb17 <- read.csv('/Users/jasonzivkovic/Documents/NewYorkTimesTextAnalysis/NYT Articles Data/ArticlesFeb2017.csv', stringsAsFactors = F)
+mar17 <- read.csv('/Users/jasonzivkovic/Documents/NewYorkTimesTextAnalysis/NYT Articles Data/ArticlesMarch2017.csv', stringsAsFactors = F)
+apr17 <- read.csv('/Users/jasonzivkovic/Documents/NewYorkTimesTextAnalysis/NYT Articles Data/ArticlesApril2017.csv', stringsAsFactors = F)
+may17 <- read.csv('/Users/jasonzivkovic/Documents/NewYorkTimesTextAnalysis/NYT Articles Data/ArticlesMay2017.csv', stringsAsFactors = F)
+jan18 <- read.csv('/Users/jasonzivkovic/Documents/NewYorkTimesTextAnalysis/NYT Articles Data/ArticlesJan2018.csv', stringsAsFactors = F)
+feb18 <- read.csv('/Users/jasonzivkovic/Documents/NewYorkTimesTextAnalysis/NYT Articles Data/ArticlesFeb2018.csv', stringsAsFactors = F)
+mar18 <-read.csv('/Users/jasonzivkovic/Documents/NewYorkTimesTextAnalysis/NYT Articles Data/NYTArticlesMarch2018.csv', stringsAsFactors = F)
+apr18 <- read.csv('/Users/jasonzivkovic/Documents/NewYorkTimesTextAnalysis/NYT Articles Data/ArticlesApril2018.csv', stringsAsFactors = F)
+
+# combine files into one dataframe - articles_df
+articles_df <- bind_rows(jan17, feb17, mar17, apr17, may17, jan18, feb18, mar18, apr18)
+
+# drop the abstract variable that only appears in some months
+articles_df <- articles_df %>%
+  select(-abstract)
+
+# Format published date variables 
+articles_df$pubDate <- ymd_hms(articles_df$pubDate)
+articles_df$day_of_week <- wday(articles_df$pubDate, label = TRUE)
+articles_df$year <- year(articles_df$pubDate)
+```
+
+# Have Words Increased Over Time?
+
+I want to see how the wordcount of NYT articles has changed over time. As the wordcount distribution is positively skewed (see my previous kernel), I will use the median wordcount here.
+
+```{r, message=FALSE, warning=FALSE}
+articles_df %>%
+  mutate(pubDate = as_date(ymd_hms(pubDate))) %>%
+  group_by(pubDate, year) %>%
+  summarise(median_articleWordCount = median(articleWordCount)) %>%
+  ggplot(aes(x=pubDate, y=median_articleWordCount)) +
+  geom_line() +
+  geom_smooth(method = "lm", se=F, col = "red") +
+  facet_wrap(~factor(year), scales = "free", ncol = 1) + 
+  labs(x = "Published Date", y = "Median article word count") +
+  theme_bw()
+```
+
+Through the almost first four months of the year, the wordcount of articles is trending up, reversing the slightly negative trend of the start of 2017, even though the highest median wordcount days were in 2017.
+
+# Sentiment Analysis
+
+I will use the `"bing"` lexicon from the `tidytext` package for my sentiment analysis below.
+
+Below, the headline sentiment was calculated by taking the difference between the number of positive words and negative words. If the resulting number was > 0, then the headline sentiment was classed as *'positive'*, while if it was < 0, then it was classed as *'negative'*. If the score = 0, then it was classed as *'neutral'*. 
+
+There were a number of headlines with *'unknown'* as the value. These were removed from the analysis.
+
+```{r, message=FALSE, warning=FALSE}
+# bing sentiments
+headlines_analysis <- articles_df %>%
+  select(articleID, headline) %>%
+  unnest_tokens(word, headline) %>%
+  anti_join(stop_words, by = "word") %>%
+  inner_join(get_sentiments("bing"), by = "word") %>%
+  filter(word != "unknown") %>%
+  count(articleID, sentiment) %>%
+  spread(sentiment, n, fill = 0) %>%
+  mutate(sentiment = positive - negative) %>%
+  mutate(Headline_sentiment = ifelse(sentiment == 0,"Neutral",ifelse(sentiment >0,"Positive", "Negative"))) %>%
+  select(articleID, Headline_sentiment)
+
+
+
+articles_df <- articles_df %>%
+  left_join(headlines_analysis, by = "articleID")
+
+
+articles_df$Headline_sentiment[is.na(articles_df$Headline_sentiment)] <- "Neutral"
+
+```
+
+## Sentiment Print Page Analysis
+
+The below aims to display whether positive headlines are placed futher towards the front of the paper than negative comments.
+
+```{r, message=FALSE, warning=FALSE}
+articles_df %>%
+  filter(Headline_sentiment == "Positive" | Headline_sentiment == "Negative") %>%
+  ggplot(aes(x=Headline_sentiment, y=printPage)) +
+  geom_boxplot(col = "darkblue", fill = "lightgrey", alpha = 0.4) +
+  coord_flip() +
+  labs(x= "Headline Sentiment", y= "Print Page") +
+  theme_bw() +
+  facet_wrap(~factor(year), scales = "free", ncol = 1)
+```
+
+As we can see, 2017 certainly did appear to have more positive headlines towards the front of the paper than negative headlines. This year seems to be a bit more balanced, however the positive headlines are still slightly closer to the front, with the negative headlines tucked away further back.
+
+## Snippet Analysis
+
+The snippet analysis below was conducted using the same sentiment rules as discussed above.
+
+```{r, message=FALSE, warning=FALSE}
+##### bing #####
+snippet_analysis_bing <- articles_df %>%
+  select(articleID, snippet) %>%
+  unnest_tokens(word, snippet) %>%
+  anti_join(stop_words, by = "word") %>%
+  inner_join(get_sentiments("bing"), by = "word")
+
+snippet_analysis_bing_count <- snippet_analysis_bing %>%
+  count(articleID, sentiment) %>%
+  spread(sentiment, n, fill = 0) %>%
+  mutate(sentiment = positive - negative) %>%
+  select(articleID, sentiment) %>%
+  mutate(snippet_sentiment = ifelse(sentiment == 0,"Neutral",ifelse(sentiment >0,"Positive", "Negative"))) %>%
+  select(-sentiment)
+
+
+articles_df <- articles_df %>%
+  left_join(snippet_analysis_bing_count, by = "articleID")
+
+articles_df$snippet_sentiment[is.na(articles_df$snippet_sentiment)] <- "Neutral"
+```
+
+Excluding the *'neutral'* sentiments, I want to see if the sentiments of an article's snippet has changed over time.
+
+```{r, message=FALSE, warning=FALSE}
+articles_df %>%
+  mutate(pubDate = as_date(ymd_hms(pubDate))) %>%
+  group_by(pubDate, year, snippet_sentiment) %>%
+  summarise(n = n()) %>%
+  mutate(percent = n/sum(n)) %>%
+  filter(snippet_sentiment == "Positive" | snippet_sentiment == "Negative") %>%
+  ggplot(aes(x=pubDate, y=percent, colour = snippet_sentiment)) +
+  geom_line(group=1) +
+  scale_color_manual(values = c("red", "darkblue")) +
+  geom_smooth(method = "lm", col = "black", linetype =4, se=F) +
+  facet_wrap(snippet_sentiment ~ factor(year), scales = "free") +
+  labs(x = "Published Date", y= "Percent Article Sentiment") +
+  scale_y_continuous(labels = scales::percent) +
+  theme_bw() +
+  theme(legend.position="none")
+
+```
+
+While the percentage of negative snippets is still greater than positive ones, 2018 sees the trend reverse from 2017 with the percentage of positive articles on the rise in 2018. 
+
+# Trump Headlines
+
+Finally, I wanted to see if Trump was in the headlines more to start 2017 or 2018.
+
+```{r, message=FALSE, warning=FALSE}
+# create words dataframe for only Trump headlines
+trump_headlines_analysis <- articles_df %>%
+  select(articleID, headline) %>%
+  unnest_tokens(word, headline) %>%
+  anti_join(stop_words, by = "word") %>%
+  inner_join(get_sentiments("bing"), by = "word") %>%
+  filter(word != "unknown")
+
+# combine Trump and Trump's into Trump
+trump_headlines_analysis$word[trump_headlines_analysis$word == "trump’s"] <- "trump"
+
+
+# create a data frame to use
+trump_articles <- trump_headlines_analysis %>%
+  mutate(trump_yes_no = factor(ifelse(word == "trump", "yes", "no"))) %>%
+  filter(trump_yes_no == "yes") %>%
+  select(articleID, trump_yes_no) %>%
+  right_join(articles_df, by = "articleID")
+
+# replace NAs to "no"
+trump_articles$trump_yes_no[is.na(trump_articles$trump_yes_no)] <- "no"
+
+# remove any duplicates for when trump appears in the headline more than once
+trump_articles <-  trump_articles[!duplicated(trump_articles[c('articleID', 'trump_yes_no')]),]
+
+# create plot
+trump_articles %>%
+  mutate(pubDate = as_date(ymd_hms(pubDate))) %>%
+  count(pubDate, year, trump_yes_no) %>%
+  mutate(frequency = n/sum(n)) %>%
+  filter(trump_yes_no == "yes") %>%
+  ggplot(aes(x=pubDate, y=frequency, colour = trump_yes_no)) +
+  geom_line(col = "darkred") +
+  geom_smooth(method = "lm", linetype = 4, col = "black", se=F) +
+  facet_wrap(~ factor(year), scales = "free", ncol = 1) +
+  labs(x="Published Date", y= "Percent Trump in Headline") +
+  scale_y_continuous(labels = scales::percent) +
+  theme_bw()
+
+```
+
+Trump appears to be in the headlines more now, and the trend is rising. It will be interesting to track this as the year goes on. Would also be great to have the remaining months of 2017 brought in to see how last year finished off. 
