@@ -1,13 +1,16 @@
 ---
 title: "NYT EDA and Click Bait"
 output:
+  word_document:
+    toc: yes
+  pdf_document:
+    toc: yes
   html_document:
-    number_sections: TRUE
-    toc: TRUE
+    code_folding: hide
     fig_height: 4
     fig_width: 7
-    code_folding: hide
-
+    number_sections: yes
+    toc: yes
 ---
 
 Thanks to Aashita Kesarwani for providing this data source to NYT articles and comments for March 2018.

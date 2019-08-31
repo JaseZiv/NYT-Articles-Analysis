@@ -1,12 +1,14 @@
 ---
 title: "Article Sentiment Analysis 2017-2018"
 output:
+  pdf_document:
+    toc: yes
   html_document:
-    number_sections: TRUE
-    toc: TRUE
+    code_folding: hide
     fig_height: 4
     fig_width: 7
-    code_folding: hide
+    number_sections: yes
+    toc: yes
 ---
 
 In this kernel, I will analyse the NYT articles data for Jan-May 2017 and Jan-Apr18 that Aashita Kesarwani has kindly provided https://www.kaggle.com/aashita/nyt-comments/data.
